@@ -80,19 +80,42 @@ proof of real capacity. It snapshots currently open datetimes, so a slot that is
 booked and later reopens alerts again, while multiple openings in one sweep are
 grouped into one message.
 
-To deploy it alongside the product monitor in Railway:
+### Production deployment
 
-1. Push this repo to GitHub, then choose **+ New -> GitHub Repo** in the existing
-   Railway project and select the same repository to create a second service.
-2. Set the new service's **Custom Start Command** to
-   `python ww_slots_monitor.py --loop`. This overrides the Procfile only for the
-   appointment service.
-3. Add `NOTIFY_METHOD=discord`, `DISCORD_WEBHOOK_URL=<webhook>`, and
-   `WW_STATE_FILE=/data/ww_slots.json` to the new service's Variables.
-4. Attach a separate Railway Volume mounted at `/data`; volumes are per-service,
-   so the product monitor's volume is not shared.
-5. Deploy. Expect a “Slot monitor online” Discord ping within a minute. The first
-   sweep seeds silently, and subsequent newly open slots trigger alerts.
+The appointment monitor is deployed in the existing Railway project as a
+separate service named `chrome-hearts-appointments`. It uses this repository's
+`main` branch with the following **Custom Start Command**:
+
+```text
+python ww_slots_monitor.py --loop
+```
+
+This service has its own Railway Volume mounted at `/data` and sends appointment
+notifications to the Discord `#nyc-instore` channel. The webhook URL is stored
+only in Railway Variables and must never be committed to the repository.
+
+The production variables are:
+
+| Variable | Value / purpose |
+|----------|-----------------|
+| `DISCORD_WEBHOOK_URL` | Secret webhook for `#nyc-instore` |
+| `NOTIFY_METHOD` | `discord` |
+| `WW_LOCATION` | `chromehearts` |
+| `WW_STATE_FILE` | `/data/ww_slots.json` |
+| `WW_POLL_SECONDS` | `20` |
+| `WW_DAYS_AHEAD` | `21` |
+| `WW_STARTUP_PING` | `1` |
+
+The deployment was verified end to end: Railway mounted the dedicated volume,
+resolved “Chrome Hearts - New York West Village” and its five live service
+types, seeded 324 slots, completed subsequent polls, and successfully delivered
+both the startup notification and a labeled test message to Discord.
+
+To recreate the service, add the same GitHub repository as a second Railway
+service, apply the custom start command and variables above, attach a dedicated
+volume at `/data`, and deploy. The first sweep seeds silently; subsequent newly
+open slots trigger alerts. The repo-level `Procfile` remains reserved for the
+product-monitor service.
 
 ## Local testing
 
@@ -105,6 +128,11 @@ python chrome_hearts_monitor.py --seed             # record catalog, no alerts
 python chrome_hearts_monitor.py --once --dry-run   # detect + print, send nothing
 python chrome_hearts_monitor.py --once             # one real sweep
 python chrome_hearts_monitor.py --loop             # what Railway runs
+
+python ww_slots_monitor.py --seed                  # record open slots, no alerts
+python ww_slots_monitor.py --once --dry-run        # detect + print, send nothing
+python ww_slots_monitor.py --once                  # one real appointment sweep
+python ww_slots_monitor.py --loop                  # appointment Railway service
 ```
 
 ## Tuning (env vars)
@@ -115,6 +143,17 @@ python chrome_hearts_monitor.py --loop             # what Railway runs
 | `CH_MAX_INDIVIDUAL` | `8` | more new than this in one sweep -> one summary message |
 | `CH_STARTUP_PING` | `1` | send a "monitor online" Discord ping on boot |
 | `CH_STATE_FILE` | `seen_products.json` | snapshot path (set to `/data/...` on Railway) |
+
+Appointment monitor:
+
+| Var | Default | Meaning |
+|-----|---------|---------|
+| `WW_LOCATION` | `chromehearts` | Waitwhile location shortname |
+| `WW_POLL_SECONDS` | `20` | target seconds between availability sweeps |
+| `WW_DAYS_AHEAD` | `21` | number of calendar days to request |
+| `WW_SERVICE_FILTER` | empty | optional service-ID or name-substring filter |
+| `WW_STARTUP_PING` | `1` | send a "slot monitor online" Discord ping on boot |
+| `WW_STATE_FILE` | `ww_slots.json` | open-slot snapshot path (use `/data/ww_slots.json` on Railway) |
 
 ## Categories
 
