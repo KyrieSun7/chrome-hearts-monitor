@@ -80,6 +80,13 @@ proof of real capacity. It snapshots currently open datetimes, so a slot that is
 booked and later reopens alerts again, while multiple openings in one sweep are
 grouped into one message.
 
+Alert links start at Waitwhile's service-selection step rather than linking
+directly to the calendar. A calendar URL without a selected service can display
+times but rejects the user's choice later in the flow. Waitwhile supports
+service and party-size query parameters, but the monitor intentionally leaves
+those choices to the customer because openings can apply to multiple services
+and party size is user-specific.
+
 ### Production deployment
 
 The appointment monitor is deployed in the existing Railway project as a

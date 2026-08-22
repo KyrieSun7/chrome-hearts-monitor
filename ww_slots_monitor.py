@@ -64,7 +64,7 @@ import requests
 
 API = "https://api.waitwhile.com/v2/public"
 LOCATION = os.environ.get("WW_LOCATION", "chromehearts")
-BOOK_URL = f"https://waitwhile.com/locations/{LOCATION}/time?registration=booking"
+BOOK_URL = f"https://waitwhile.com/locations/{LOCATION}/services?registration=booking"
 STATE_FILE = Path(os.environ.get("WW_STATE_FILE", "ww_slots.json"))
 POLL_SECONDS = int(os.environ.get("WW_POLL_SECONDS", "20"))
 DAYS_AHEAD = int(os.environ.get("WW_DAYS_AHEAD", "21"))
@@ -314,4 +314,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
