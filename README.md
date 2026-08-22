@@ -67,6 +67,33 @@ channel -> Copy Webhook URL -> use it as `DISCORD_WEBHOOK_URL`. The URL itself i
 the secret; keep it in Railway Variables, never in the repo. Install the Discord
 app and enable that channel's notifications to get pings on your phone.
 
+## Appointment-slot monitor
+
+`ww_slots_monitor.py` is a second always-on worker that watches the Waitwhile
+calendar for the Chrome Hearts New York West Village store and sends one Discord
+message whenever appointment slots become bookable. It uses Waitwhile's public,
+unauthenticated availability endpoint, which returns the whole configured window
+in one request; a slot is open only when `numAvailableSpots > 0`. Service names
+come from the public location endpoint at startup. The monitor deliberately does
+not use `first-available-dates`, because those are calendar-selectable dates, not
+proof of real capacity. It snapshots currently open datetimes, so a slot that is
+booked and later reopens alerts again, while multiple openings in one sweep are
+grouped into one message.
+
+To deploy it alongside the product monitor in Railway:
+
+1. Push this repo to GitHub, then choose **+ New -> GitHub Repo** in the existing
+   Railway project and select the same repository to create a second service.
+2. Set the new service's **Custom Start Command** to
+   `python ww_slots_monitor.py --loop`. This overrides the Procfile only for the
+   appointment service.
+3. Add `NOTIFY_METHOD=discord`, `DISCORD_WEBHOOK_URL=<webhook>`, and
+   `WW_STATE_FILE=/data/ww_slots.json` to the new service's Variables.
+4. Attach a separate Railway Volume mounted at `/data`; volumes are per-service,
+   so the product monitor's volume is not shared.
+5. Deploy. Expect a “Slot monitor online” Discord ping within a minute. The first
+   sweep seeds silently, and subsequent newly open slots trigger alerts.
+
 ## Local testing
 
 ```bash

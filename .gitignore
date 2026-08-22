@@ -3,6 +3,7 @@
 
 # local state (on Railway this lives on a mounted volume, not in the repo)
 seen_products.json
+ww_slots.json
 *.tmp
 
 # python
