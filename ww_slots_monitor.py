@@ -64,7 +64,8 @@ import requests
 
 API = "https://api.waitwhile.com/v2/public"
 LOCATION = os.environ.get("WW_LOCATION", "chromehearts")
-BOOK_URL = f"https://waitwhile.com/locations/{LOCATION}/services?registration=booking"
+BOOK_URL = os.environ.get(
+    "WW_BOOK_URL", f"https://waitwhile.com/locations/{LOCATION}/time?registration=booking")
 STATE_FILE = Path(os.environ.get("WW_STATE_FILE", "ww_slots.json"))
 POLL_SECONDS = int(os.environ.get("WW_POLL_SECONDS", "20"))
 DAYS_AHEAD = int(os.environ.get("WW_DAYS_AHEAD", "21"))
@@ -181,19 +182,19 @@ def open_slots(slots: list[dict], services: dict[str, str],
     return out
 
 
-def fmt_slot(iso_local: str, info: dict) -> str:
-    when = datetime.strptime(iso_local, "%Y-%m-%dT%H:%M")
+def fmt_slot(iso_local: str, info: dict, tz: ZoneInfo) -> str:
+    when = datetime.strptime(iso_local, "%Y-%m-%dT%H:%M").replace(tzinfo=tz)
     stamp = when.strftime("%a %b %d, %I:%M %p").replace(" 0", " ").lstrip("0")
     svc = ""
     if info.get("services"):
         svc = " [" + ", ".join(f"{n}: {v}" for n, v in info["services"].items()) + "]"
-    return f"{stamp} ET — {info['avail']} spot(s){svc}"
+    return f"{stamp} {when.strftime('%Z')} — {info['avail']} spot(s){svc}"
 
 
-def build_alert(new: dict[str, dict], location_name: str) -> str:
+def build_alert(new: dict[str, dict], location_name: str, tz: ZoneInfo) -> str:
     lines = [f"\U0001f7e2 OPEN SLOT{'S' if len(new) > 1 else ''} — {location_name}"]
     for iso in sorted(new)[:MAX_ALERT_LINES]:
-        lines.append(f"\u2022 {fmt_slot(iso, new[iso])}")
+        lines.append(f"\u2022 {fmt_slot(iso, new[iso], tz)}")
     if len(new) > MAX_ALERT_LINES:
         lines.append(f"...and {len(new) - MAX_ALERT_LINES} more.")
     lines.append(f"Book now: {BOOK_URL}")
@@ -248,11 +249,11 @@ def sweep(session: requests.Session, services: dict[str, str], tz: ZoneInfo,
     if new:
         log(f"{len(current)} open now, {len(new)} NEWLY open:")
         for k in sorted(new):
-            log("   + " + fmt_slot(k, new[k]))
+            log("   + " + fmt_slot(k, new[k], tz))
         if dry_run:
             log("[dry-run] not sending.")
         else:
-            _send(build_alert(new, location_name))
+            _send(build_alert(new, location_name, tz))
             log("notified.")
     else:
         log(f"{len(slots)} slots in window, {len(current)} open, 0 newly open.")

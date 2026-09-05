@@ -162,6 +162,39 @@ Appointment monitor:
 | `WW_STARTUP_PING` | `1` | send a "slot monitor online" Discord ping on boot |
 | `WW_STATE_FILE` | `ww_slots.json` | open-slot snapshot path (use `/data/ww_slots.json` on Railway) |
 
+### Miami appointments
+
+Miami uses the same Waitwhile API and `ww_slots_monitor.py` worker as New York,
+configured with `WW_LOCATION=chromeheartsmiami`. Its public location record is
+“Chrome Hearts - Miami”; the API currently exposes the same five service types
+as New York and falls back to `America/New_York` because Waitwhile returns no
+timezone for this location. The booking link starts at service selection:
+`https://waitwhile.com/locations/chromeheartsmiami/services?registration=booking`.
+
+The Railway service uses `python ww_slots_monitor.py --loop`, its own Discord
+webhook, `WW_STATE_FILE=/data/ww_slots_miami.json`, and a dedicated volume at
+`/data`. Set `WW_BOOK_URL` to the service-selection URL above.
+
+### Los Angeles appointments
+
+Los Angeles books through Appointedd rather than Waitwhile, so
+`appointedd_slots_monitor.py` watches Appointedd's GraphQL availability-interval
+API. It discovers the widget's static public access token at startup and retries
+token discovery after a 401. `AvailableInterval` entries are real openings;
+group-booking intervals are ignored. Times are converted from UTC to
+`America/Los_Angeles` before alerts are formatted.
+
+By default the service watches LA In-store only
+(`5f649cb02f6894080a6a49e4`). Malibu and the repair services remain opt-in via
+`APPT_SERVICES`. The Railway service uses
+`python appointedd_slots_monitor.py --loop`, its own Discord webhook,
+`APPT_STATE_FILE=/data/appt_slots.json`, and a dedicated `/data` volume.
+
+To recreate either service, add this same GitHub repository as another Railway
+service, set its custom start command and variables, mount a separate volume at
+`/data`, and deploy. Each service seeds its initial state silently and sends its
+own online ping.
+
 ## Categories
 
 `CATEGORIES` in `chrome_hearts_monitor.py` is the full known slug list — the few
