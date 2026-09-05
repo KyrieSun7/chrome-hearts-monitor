@@ -27,7 +27,7 @@ def _env(name: str) -> str:
     return val
 
 
-def _send_discord(body: str) -> None:
+def _send_discord(body: str, *, suppress_embeds: bool = False) -> None:
     """
     POST to a Discord channel webhook. To get the URL:
       Discord -> Server Settings -> Integrations -> Webhooks -> New Webhook
@@ -35,7 +35,10 @@ def _send_discord(body: str) -> None:
     The URL itself is the secret; anyone with it can post to that channel.
     """
     url = _env("DISCORD_WEBHOOK_URL")
-    resp = requests.post(url, json={"content": body[:2000]}, timeout=30)
+    payload = {"content": body[:2000]}
+    if suppress_embeds:
+        payload["flags"] = 1 << 2  # Discord SUPPRESS_EMBEDS
+    resp = requests.post(url, json=payload, timeout=30)
     if resp.status_code >= 300:
         print(f"[discord] error {resp.status_code}: {resp.text}", file=sys.stderr)
     else:
@@ -77,10 +80,10 @@ def _send_email_sms(body: str) -> None:
     print("[email_sms] sent")
 
 
-def send_notification(body: str) -> None:
+def send_notification(body: str, *, suppress_embeds: bool = False) -> None:
     method = os.environ.get("NOTIFY_METHOD", "discord").lower()
     if method == "discord":
-        _send_discord(body)
+        _send_discord(body, suppress_embeds=suppress_embeds)
     elif method == "twilio":
         _send_twilio(body)
     elif method == "email_sms":

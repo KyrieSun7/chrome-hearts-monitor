@@ -32,13 +32,21 @@ The worker runs forever. Each ~30s sweep:
 1. Fetches the homepage + every category in `CATEGORIES` as a gentle, jittered
    trickle of requests (reads like browsing, not a burst — keeps Cloudflare calm).
 2. Builds the live product set, keyed by product id (PID).
-3. Diffs against the saved snapshot; PIDs never seen before are "new."
+3. Diffs against persistent history; only PIDs never seen before are "new."
 4. Infers size from the PID/link when Chrome Hearts encodes one in the SKU.
 5. Posts new items to Discord, then saves the snapshot.
 
 Keying on PID means it catches genuinely new items even inside categories that
-already had products. The first sweep with no prior snapshot **seeds silently**
-(records the catalog, sends nothing), so you never get flooded on boot.
+already had products. Seen PIDs remain in history when products sell out or a
+category temporarily fails to load, so ordinary restocks and transient crawl
+gaps do not generate false "new" alerts. The first sweep with no prior snapshot
+**seeds silently** (records the catalog, sends nothing), so you never get flooded
+on boot.
+
+Small drops are sent as one message per product. Large batches are split into
+numbered Discord messages containing every item, up to `CH_MAX_INDIVIDUAL` items
+per message. Product names are bold and links are compact, which avoids a wall
+of link-preview cards while keeping every product directly clickable.
 
 ## Deploy on Railway
 
@@ -147,7 +155,7 @@ python ww_slots_monitor.py --loop                  # appointment Railway service
 | Var | Default | Meaning |
 |-----|---------|---------|
 | `CH_POLL_SECONDS` | `30` | target seconds between sweep starts |
-| `CH_MAX_INDIVIDUAL` | `8` | more new than this in one sweep -> one summary message |
+| `CH_MAX_INDIVIDUAL` | `8` | maximum items per message in a paginated large batch |
 | `CH_STARTUP_PING` | `1` | send a "monitor online" Discord ping on boot |
 | `CH_STATE_FILE` | `seen_products.json` | snapshot path (set to `/data/...` on Railway) |
 

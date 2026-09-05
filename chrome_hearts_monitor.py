@@ -24,7 +24,7 @@ Key env vars:
     DISCORD_WEBHOOK_URL=...
     CH_STATE_FILE=/data/seen_products.json   # persistent volume path on Railway
     CH_POLL_SECONDS=30              # target seconds between sweep starts
-    CH_MAX_INDIVIDUAL=8             # >this many new at once -> one summary msg
+    CH_MAX_INDIVIDUAL=8             # items per message in a large batch
     CH_STARTUP_PING=1               # send a "monitor online" Discord msg on boot
 """
 
@@ -52,6 +52,7 @@ STATE_FILE = Path(os.environ.get("CH_STATE_FILE", "seen_products.json"))
 POLL_SECONDS = int(os.environ.get("CH_POLL_SECONDS", "30"))
 MAX_INDIVIDUAL = int(os.environ.get("CH_MAX_INDIVIDUAL", "8"))
 STARTUP_PING = os.environ.get("CH_STARTUP_PING", "1") == "1"
+SUMMARY_MESSAGE_LIMIT = 1850  # leave headroom below Discord's 2,000-char limit
 
 # Broad net: every known category slug. Live ones render grids; the rest are
 # valid-but-usually-empty and populate when a drop lands -- which is the point.
@@ -249,11 +250,14 @@ def load_state() -> dict[str, dict]:
         return {}
 
 
-def save_state(catalog: dict[str, Product]) -> None:
+def save_state(catalog: dict[str, Product | dict]) -> None:
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp = STATE_FILE.with_suffix(STATE_FILE.suffix + ".tmp")
-    tmp.write_text(json.dumps({pid: asdict(p) for pid, p in catalog.items()},
-                              indent=2, ensure_ascii=False))
+    serialized = {
+        pid: asdict(product) if isinstance(product, Product) else product
+        for pid, product in catalog.items()
+    }
+    tmp.write_text(json.dumps(serialized, indent=2, ensure_ascii=False))
     tmp.replace(STATE_FILE)  # atomic, so a crash mid-write can't corrupt state
 
 
@@ -261,25 +265,56 @@ def save_state(catalog: dict[str, Product]) -> None:
 # Notify
 # --------------------------------------------------------------------------- #
 
-def _send(body: str) -> None:
+def _send(body: str, *, suppress_embeds: bool = False) -> None:
     from notifier import send_notification
-    send_notification(body)
+    send_notification(body, suppress_embeds=suppress_embeds)
+
+
+def build_batch_messages(products: list[Product]) -> list[str]:
+    """Format every item into readable, Discord-safe summary messages."""
+    item_lines = []
+    for p in products:
+        price = f"${p.price}" if p.price else "price n/a"
+        size = f" · {p.size}" if p.size else ""
+        item_lines.append(
+            f"• **{p.name}**{size} — {price} · [View item]({p.url})"
+        )
+
+    chunks: list[list[str]] = []
+    current: list[str] = []
+    current_chars = 0
+    for line in item_lines:
+        if current and (len(current) >= MAX_INDIVIDUAL or
+                        current_chars + len(line) + 1 > SUMMARY_MESSAGE_LIMIT):
+            chunks.append(current)
+            current = []
+            current_chars = 0
+        current.append(line)
+        current_chars += len(line) + 1
+    if current:
+        chunks.append(current)
+
+    total = len(chunks)
+    return [
+        "\n".join([
+            f"\U0001f6a8 {len(products)} new Chrome Hearts items — "
+            f"batch {index}/{total}",
+            *chunk,
+        ])
+        for index, chunk in enumerate(chunks, 1)
+    ]
 
 
 def notify_new(products: list[Product]) -> None:
-    """Per-item messages, but collapse to one summary if a big batch drops."""
+    """Send small drops individually and paginate every item in large drops."""
     if len(products) <= MAX_INDIVIDUAL:
         for p in products:
             _send(f"\U0001f6a8 New Chrome Hearts drop\n{p.pretty()}")
             time.sleep(1)
         return
-    lines = [f"\U0001f6a8 {len(products)} new Chrome Hearts items:"]
-    for p in products[:MAX_INDIVIDUAL]:
-        price = f"${p.price}" if p.price else ""
-        size = f" [{p.size}]" if p.size else ""
-        lines.append(f"\u2022 {p.name}{size} {price} {p.url}")
-    lines.append(f"...and {len(products) - MAX_INDIVIDUAL} more.")
-    _send("\n".join(lines))
+    for message in build_batch_messages(products):
+        _send(message, suppress_embeds=True)
+        time.sleep(1)
 
 
 # --------------------------------------------------------------------------- #
@@ -296,9 +331,10 @@ def sweep(session: requests.Session, *, seed: bool, dry_run: bool) -> None:
         return
 
     new = [catalog[pid] for pid in catalog if pid not in previous]
+    seen = {**previous, **{pid: asdict(p) for pid, p in catalog.items()}}
     if not new:
         log(f"{len(catalog)} live, 0 new.")
-        save_state(catalog)
+        save_state(seen)
         return
 
     log(f"{len(catalog)} live, {len(new)} NEW:")
@@ -309,7 +345,7 @@ def sweep(session: requests.Session, *, seed: bool, dry_run: bool) -> None:
     else:
         notify_new(new)
         log("notified.")
-    save_state(catalog)
+    save_state(seen)
 
 
 # --------------------------------------------------------------------------- #
